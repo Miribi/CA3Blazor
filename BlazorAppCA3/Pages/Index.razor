@@ -1,0 +1,339 @@
+﻿@page "/"
+@page "/motorcycles"
+@inject HttpClient Http
+@inject IConfiguration Configuration
+
+<h3>Search Motorcycle Specs</h3>
+
+
+
+<div class="input-group mb-3">
+    <input class="form-control" placeholder="Enter or Select Make" @bind="make" title="Type or select the manufacturer (e.g., Honda, Yamaha)" />
+    <select class="form-select" @onchange="(e) => make = e.Value.ToString()" title="Select a manufacturer from the list">
+        <option value="">Select Make</option>
+        @foreach (var suggestion in makeSuggestions)
+        {
+            <option value="@suggestion">@suggestion</option>
+        }
+    </select>
+</div>
+
+
+
+<div class="input-group mb-3">
+    <input class="form-control" placeholder="Enter or Select Model" @bind="model" title="Type or select the model (e.g., Ninja, CBR)" />
+    <select class="form-select" @onchange="(e) => model = e.Value.ToString()" title="Select a model from the list">
+        <option value="">Select Model</option>
+        @foreach (var suggestion in modelSuggestions)
+        {
+            <option value="@suggestion">@suggestion</option>
+        }
+    </select>
+</div>
+
+
+
+<div class="input-group mb-3">
+    <input class="form-control" placeholder="Enter or Select Year" @bind="year" />
+    <select class="form-select" @onchange="(e) => year = e.Value.ToString()">
+        <option value="">Select Year</option>
+        @foreach (var suggestion in yearSuggestions)
+        {
+            <option value="@suggestion">@suggestion</option>
+        }
+    </select>
+</div>
+
+<div>
+    <button class="btn btn-primary" @onclick="SearchMotorcycles">Search</button>
+</div>
+
+<!-- Sorting -->
+<div class="input-group mb-3">
+    <label class="input-group-text">Sort By</label>
+    <select class="form-select" @bind="sortField">
+        <option value="year">Year</option>
+        <option value="power">Power</option>
+    </select>
+    <select class="form-select" @bind="isAscending">
+        <option value="true">Ascending</option>
+        <option value="false">Descending</option>
+    </select>
+</div>
+
+
+
+@if (isLoading)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (motorcycles == null || motorcycles.Count == 0)
+{
+    <p>Need something different? <a href="/refinedSearch">Try a detailed Search.</a></p>
+}
+else
+{
+    <table class="table mt-4">
+        <thead>
+            <tr>
+                @foreach (var field in dynamicFields)
+                {
+                    <th>@field</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var bike in motorcycles)
+            {
+                <tr>
+                    @foreach (var field in dynamicFields)
+                    {
+                        <td>@(bike.ContainsKey(field) ? bike[field] : "N/A")</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string sortField = "year"; // Default sort field
+    private bool isAscending = true; // Default sort direction
+
+    private int currentPage = 1;
+    private const int ResultsPerPage = 15;
+
+    private string make = string.Empty;
+    private string model = string.Empty;
+    private string year = string.Empty;
+
+    private List<string> makeSuggestions = new() { "Honda", "Yamaha", "Kawasaki", "Suzuki", "KTM", "Aprilia", "Harley-Davidson", "Royal Alloy", "Sucker Punch Sallys", "Benelli", "Ducati", "Triumph" }; // Hardcoded as fallback
+    private List<string> modelSuggestions = new() { "66 Bobber", "Ninja", "Superduke"};
+    private List<string> yearSuggestions = new() {"2019", "2020", "2021", "2022", "2023", "2024"};
+    private List<Dictionary<string, object>> motorcycles = new();
+    private List<string> dynamicFields = new();
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+
+
+    private async Task LoadMakes()
+    {
+        try
+        {
+            isLoading = true;
+            makeSuggestions.Clear();
+
+            var response = await Http.GetAsync("motorcycles");
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object>>>();
+                if (data != null)
+                {
+                    makeSuggestions = data
+                        .Where(bike => bike.ContainsKey("make") && bike["make"] != null)
+                        .Select(bike => bike["make"].ToString()!)
+                        .Distinct()
+                        .OrderBy(m => m)
+                        .ToList();
+                }
+            }
+            else
+            {
+                errorMessage = $"Error fetching makes: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+
+
+
+    private async Task LoadModels()
+    {
+        if (string.IsNullOrWhiteSpace(make)) return; // Ensure make is selected or typed.
+
+        try
+        {
+            isLoading = true;
+            modelSuggestions.Clear();
+
+            var response = await Http.GetAsync($"motorcycles?make={Uri.EscapeDataString(make)}");
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object>>>();
+                if (data != null)
+                {
+                    modelSuggestions = data
+                        .Where(bike => bike.ContainsKey("model") && bike["model"] != null)
+                        .Select(bike => bike["model"].ToString()!)
+                        .Distinct()
+                        .OrderBy(m => m)
+                        .ToList();
+                }
+            }
+            else
+            {
+                errorMessage = $"Error fetching models: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadYears()
+    {
+        if (string.IsNullOrWhiteSpace(make) || string.IsNullOrWhiteSpace(model)) return; // Ensure make and model are valid.
+
+        try
+        {
+            isLoading = true;
+            yearSuggestions.Clear();
+
+            var response = await Http.GetAsync($"motorcycles?make={Uri.EscapeDataString(make)}&model={Uri.EscapeDataString(model)}");
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object>>>();
+                if (data != null)
+                {
+                    yearSuggestions = data
+                        .Where(bike => bike.ContainsKey("year") && bike["year"] != null)
+                        .Select(bike => bike["year"].ToString()!)
+                        .Distinct()
+                        .OrderBy(y => y)
+                        .ToList();
+                }
+            }
+            else
+            {
+                errorMessage = $"Error fetching years: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+
+
+
+
+    private async Task SearchMotorcycles()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            // Validate Make
+            if (string.IsNullOrWhiteSpace(make))
+            {
+                errorMessage = "Please select or enter a make.";
+                return;
+            }
+
+            // Validate Model (Optional - Only if provided)
+            if (!string.IsNullOrWhiteSpace(model) && model.Length < 2)
+            {
+                errorMessage = "Model must be at least 2 characters long.";
+                return;
+            }
+
+            // Validate Year (Optional - Only if provided)
+            if (!string.IsNullOrWhiteSpace(year) && (!int.TryParse(year, out var yearNum) || yearNum < 1900 || yearNum > DateTime.Now.Year))
+            {
+                errorMessage = "Please enter a valid year (e.g., 2023).";
+                return;
+            }
+
+            // Build API URL
+            var offset = (currentPage - 1) * ResultsPerPage;
+            var sortDirection = isAscending ? "asc" : "desc"; // Sort direction
+
+            var apiUrl = $"motorcycles?make={Uri.EscapeDataString(make)}&offset={offset}"; // Include offset for pagination
+            if (!string.IsNullOrWhiteSpace(model))
+                apiUrl += $"&model={Uri.EscapeDataString(model)}";
+            if (!string.IsNullOrWhiteSpace(year))
+                apiUrl += $"&year={Uri.EscapeDataString(year)}";
+
+            var response = await Http.GetAsync(apiUrl);
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object>>>();
+                if (data != null)
+                {
+                    motorcycles = data;
+                    dynamicFields = motorcycles.SelectMany(bike => bike.Keys).Distinct().ToList();
+                }
+                else
+                {
+                    errorMessage = "No motorcycles found.";
+                }
+            }
+            else
+            {
+                errorMessage = $"API Error: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private bool IsFirstPage => currentPage == 1;
+    private bool IsLastPage => motorcycles.Count < ResultsPerPage; // Last page if less than ResultsPerPage
+
+    private async Task NextPage()
+    {
+        currentPage++;
+        await SearchMotorcycles();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            await SearchMotorcycles();
+        }
+    }
+
+
+
+}
+
+<!-- Pagination -->
+<div class="d-flex justify-content-between mt-3">
+    <button class="btn btn-secondary" @onclick="PreviousPage" disabled="@IsFirstPage">Previous</button>
+    <span>Page @currentPage</span>
+    <button class="btn btn-secondary" @onclick="NextPage" disabled="@IsLastPage">Next</button>
+</div>

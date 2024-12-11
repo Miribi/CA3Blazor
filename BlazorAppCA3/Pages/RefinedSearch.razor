@@ -1,0 +1,128 @@
+﻿@page "/refinedSearch"
+@inject HttpClient Http
+
+<h3>Refined Motorcycle Search</h3>
+
+<div class="input-group mb-3">
+    <input type="text" class="form-control" placeholder="Enter motorcycle make (e.g., Honda)" @bind="make" />
+</div>
+<div class="input-group mb-3">
+    <input type="text" class="form-control" placeholder="Enter motorcycle model (e.g., CBR600RR)" @bind="model" />
+</div>
+<div class="input-group mb-3">
+    <input type="text" class="form-control" placeholder="Enter motorcycle year (e.g., 2022)" @bind="year" />
+</div>
+<div class="input-group mb-3">
+    <input type="text" class="form-control" placeholder="Enter motorcycle body type (e.g., Cruiser)" @bind="type" />
+</div>
+<div class="input-group mb-3">
+    <input type="text" class="form-control" placeholder="Enter CC (e.g., 600)" @bind="displacement" />
+</div>
+<div class="input-group mb-3">
+    <input type="text" class="form-control" placeholder="Enter kwh (e.g., 600)" @bind="power" />
+</div>
+
+<div>
+    <button class="btn btn-primary" @onclick="RefinedSearchMotorcycles">Search</button>
+</div>
+
+@if (isLoading)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (motorcycles == null || motorcycles.Count == 0)
+{
+    <p>No motorcycles found for the specified search criteria.</p>
+}
+else
+{
+    <table class="table mt-4">
+        <thead>
+            <tr>
+                @foreach (var field in dynamicFields)
+                {
+                    <th>@field</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var bike in motorcycles)
+            {
+                <tr>
+                    @foreach (var field in dynamicFields)
+                    {
+                        <td>@(bike.ContainsKey(field) ? bike[field] : "N/A")</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string make = string.Empty;
+    private string model = string.Empty;
+    private string year = string.Empty;
+    private string type = string.Empty;
+    private string displacement = string.Empty;
+    private string power = string.Empty;
+
+    private List<Dictionary<string, object>> motorcycles = new();
+    private List<string> dynamicFields = new();
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+
+    private async Task RefinedSearchMotorcycles()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        motorcycles = new();
+        dynamicFields = new();
+
+        try
+        {
+            var queryParameters = new List<string>();
+            if (!string.IsNullOrWhiteSpace(make)) queryParameters.Add($"make={make}");
+            if (!string.IsNullOrWhiteSpace(model)) queryParameters.Add($"model={model}");
+            if (!string.IsNullOrWhiteSpace(year)) queryParameters.Add($"year={year}");
+            if (!string.IsNullOrWhiteSpace(type)) queryParameters.Add($"type={type}");
+            if (!string.IsNullOrWhiteSpace(displacement)) queryParameters.Add($"displacement={displacement}");
+            if (!string.IsNullOrWhiteSpace(power)) queryParameters.Add($"power={power}");
+
+            var queryString = string.Join("&", queryParameters);
+            var response = await Http.GetAsync($"?{queryString}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<List<Dictionary<string, object>>>();
+                if (data != null && data.Count > 0)
+                {
+                    motorcycles = data;
+                    dynamicFields = motorcycles.SelectMany(bike => bike.Keys).Distinct().ToList();
+                }
+                else
+                {
+                    errorMessage = "No motorcycles found for the specified search criteria.";
+                }
+            }
+            else
+            {
+                errorMessage = $"API error: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
